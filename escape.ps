@@ -1,0 +1,61 @@
+# 1. Host & VM Details (Update with your VM IP, user credentials, etc.)
+$VM_IP = "192.168.1.100"  # Replace with the VM's IP
+$VM_User = "Administrator" # Replace with the VM's username (use root for Linux)
+$VM_Password = "Password123" # Replace with VM's password
+
+# 2. Path to the activate_sudo_token script (ensure this is available on the host)
+$localScriptPath = "C:\path\to\activate_sudo_token" 
+$remoteScriptPath = "C:\Windows\Temp\activate_sudo_token"
+
+# 3. Automatically establish a session with the VM using PowerShell Remoting (or SSH)
+$SecurePassword = ConvertTo-SecureString $VM_Password -AsPlainText -Force
+$Credential = New-Object System.Management.Automation.PSCredential ($VM_User, $SecurePassword)
+
+# 4. Function to execute remote commands (using PowerShell Remoting or SSH)
+function Execute-RemoteCommand {
+    param (
+        [string]$VM_IP,
+        [PSCredential]$Credential,
+        [string]$Command
+    )
+
+    # Use PowerShell Remoting or SSH (if remoting is unavailable) to execute the command on the VM
+    try {
+        # PowerShell Remoting
+        Invoke-Command -ComputerName $VM_IP -Credential $Credential -ScriptBlock {
+            param($Command)
+            Invoke-Expression $Command
+        } -ArgumentList $Command
+    }
+    catch {
+        Write-Host "Error executing command on VM: $_"
+    }
+}
+
+# 5. Copy the sudo token activation script to the VM and execute it
+Write-Host "Copying activate_sudo_token to VM..."
+Execute-RemoteCommand -VM_IP $VM_IP -Credential $Credential -Command "Copy-Item -Path '$localScriptPath' -Destination '$remoteScriptPath' -Force"
+
+# 6. Set script permissions (if needed on VM) and execute the sudo token script
+Write-Host "Setting permissions and executing script on VM..."
+Execute-RemoteCommand -VM_IP $VM_IP -Credential $Credential -Command "Set-ItemProperty -Path '$remoteScriptPath' -Name IsReadOnly -Value $false"
+Execute-RemoteCommand -VM_IP $VM_IP -Credential $Credential -Command "Start-Process -FilePath '$remoteScriptPath' -ArgumentList '/S' -NoNewWindow -Wait"
+
+# 7. Once done with VM, switch back to the host system for further operations
+Write-Host "Returning to Host..."
+$hostPID = Get-Process -Name "powershell" | Select-Object -First 1
+Write-Host "Injecting into host process $($hostPID.Id) -> powershell"
+
+# 8. Example process injection (using custom command or logic on host)
+# Here we can inject commands using tools like Sysinternals or other PowerShell-based methods
+# Example: using Sysinternals PsExec to execute a command remotely on the host if needed
+
+$PsExecPath = "C:\path\to\PSTools\PsExec.exe"  # Ensure you have PsExec.exe available
+$PsExecArgs = "-accepteula -s -i $($hostPID.Id) cmd.exe"
+Start-Process -FilePath $PsExecPath -ArgumentList $PsExecArgs -NoNewWindow
+
+# 9. Clean-up operations (optional): Delete temporary files, logs, etc.
+Write-Host "Cleaning up temporary files..."
+Execute-RemoteCommand -VM_IP $VM_IP -Credential $Credential -Command "Remove-Item -Path '$remoteScriptPath' -Force"
+
+Write-Host "PoC complete!"
